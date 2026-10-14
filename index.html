@@ -190,8 +190,24 @@
             </div>
 
             <!-- Katman Seçenekleri -->
-            <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 space-y-2">
-                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gösterim Ayarları</div>
+            <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 space-y-3">
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Altlık Harita (API Keysiz)</div>
+                <div class="grid grid-cols-2 gap-1.5 text-xs font-semibold">
+                    <button id="btn-topo" class="basemap-btn active px-2.5 py-1.5 rounded-lg border border-rose-600 bg-rose-600 text-white shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer">
+                        <span>🏔️</span> Topografik
+                    </button>
+                    <button id="btn-gray" class="basemap-btn px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-400 flex items-center justify-center gap-1 transition-all cursor-pointer">
+                        <span>🏙️</span> Açık Gri
+                    </button>
+                    <button id="btn-satellite" class="basemap-btn px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-400 flex items-center justify-center gap-1 transition-all cursor-pointer">
+                        <span>🛰️</span> Uydu
+                    </button>
+                    <button id="btn-osm" class="basemap-btn px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-400 flex items-center justify-center gap-1 transition-all cursor-pointer">
+                        <span>🗺️</span> Standart
+                    </button>
+                </div>
+
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-1">İşaretçi Ayarları</div>
                 <div class="flex gap-4 text-xs font-medium">
                     <label class="flex items-center gap-1.5 cursor-pointer select-none">
                         <input type="checkbox" id="toggle-milestones" checked class="accent-rose-700 rounded">
@@ -385,6 +401,38 @@
             }
         }
 
+        let activeBasemap = 'topo'; // 'topo', 'gray', 'satellite', 'osm'
+        let currentTileGroup = null;
+
+        function updateBasemapButtons() {
+            document.querySelectorAll('.basemap-btn').forEach(btn => {
+                btn.className = "basemap-btn px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-400 flex items-center justify-center gap-1 transition-all cursor-pointer";
+            });
+            if (!dark) {
+                const activeBtn = document.getElementById('btn-' + activeBasemap);
+                if (activeBtn) {
+                    activeBtn.className = "basemap-btn active px-2.5 py-1.5 rounded-lg border border-rose-600 bg-rose-600 text-white shadow-xs flex items-center justify-center gap-1 transition-all cursor-pointer";
+                }
+            }
+        }
+
+        function setBasemap(type) {
+            activeBasemap = type;
+            if (dark) {
+                dark = false;
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                updateThemeIcon();
+            }
+            updateBasemapButtons();
+            updateMapStyle();
+        }
+
+        document.getElementById('btn-topo').addEventListener('click', () => setBasemap('topo'));
+        document.getElementById('btn-gray').addEventListener('click', () => setBasemap('gray'));
+        document.getElementById('btn-satellite').addEventListener('click', () => setBasemap('satellite'));
+        document.getElementById('btn-osm').addEventListener('click', () => setBasemap('osm'));
+
         document.getElementById('theme-toggle').addEventListener('click', () => {
             dark = !dark;
             if (dark) {
@@ -395,6 +443,7 @@
                 localStorage.setItem('theme', 'light');
             }
             updateThemeIcon();
+            updateBasemapButtons();
             updateMapStyle();
         });
 
@@ -408,22 +457,69 @@
             position: 'topright'
         }).addTo(map);
 
-        // Harita Katmanları
-        let tileLayer;
-        
+        // Harita Katmanları (100% API KEY GEREKTİRMEYEN KESİNTİSİZ KATMANLAR)
         function updateMapStyle() {
-            if (tileLayer) map.removeLayer(tileLayer);
-            
-            const styleUrl = dark 
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                
-            tileLayer = L.tileLayer(styleUrl, {
-                attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20
-            }).addTo(map);
+            if (currentTileGroup) {
+                map.removeLayer(currentTileGroup);
+            }
+
+            const layers = [];
+
+            if (dark) {
+                // Koyu Tema: Esri Dark Canvas Base + Reference (API Keysiz, Kesintisiz)
+                const darkBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: '&copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+                    maxZoom: 16
+                });
+                const darkRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: '',
+                    maxZoom: 16
+                });
+                layers.push(darkBase, darkRef);
+            } else {
+                if (activeBasemap === 'topo') {
+                    // Esri World Topo: Dağ kabartmaları, nehirler, kanyonlar, şehirler (Doğu Ekspresi için en ideali)
+                    const topo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: '&copy; Esri &mdash; National Geographic, Esri, DeLorme, NAVTEQ, USGS',
+                        maxZoom: 19
+                    });
+                    layers.push(topo);
+                } else if (activeBasemap === 'gray') {
+                    // Esri World Light Gray: Minimalist açık gri ve şehir etiketleri
+                    const grayBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: '&copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+                        maxZoom: 16
+                    });
+                    const grayRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: '',
+                        maxZoom: 16
+                    });
+                    layers.push(grayBase, grayRef);
+                } else if (activeBasemap === 'satellite') {
+                    // Esri World Imagery: Yüksek çözünürlüklü uydu görüntüsü + yerleşim yeri sınır etiketleri
+                    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+                        maxZoom: 19
+                    });
+                    const satRef = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: '',
+                        maxZoom: 19
+                    });
+                    layers.push(sat, satRef);
+                } else {
+                    // OSM Standart (Humanitarian / OpenStreetMap):
+                    const osm = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                        maxZoom: 19
+                    });
+                    layers.push(osm);
+                }
+            }
+
+            currentTileGroup = L.layerGroup(layers).addTo(map);
         }
+
+        updateBasemapButtons();
         updateMapStyle();
 
         // Doğu Ekspresi Ray Çizgisi (Koyu Kırmızı/Burgundy)
